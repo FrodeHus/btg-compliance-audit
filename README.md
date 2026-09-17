@@ -62,9 +62,13 @@ Each result carries one of six statuses: `PASS`, `FAIL`, `WARN`, `INFO`, `NOPERM
 
 Raw Graph error text is kept out of the result records deliberately, since responses can contain identifiers; `-ShowErrors` prints it to the console for debugging.
 
+## Scope
+
+Single tenant by design. The runbook authenticates with the Automation Account's system-assigned managed identity, which is a tenant-local service principal and cannot read another tenant's directory. To cover several tenants, deploy the stack once per tenant with its own Terraform state; a central hub would mean replacing the managed identity with a multi-tenant app registration, which is deliberately out of scope here.
+
 ## Deploy
 
-Prerequisites: Terraform >= 1.9, Azure CLI login (`az login`) as an identity with Owner (or Contributor + User Access Administrator) on the target subscription, plus Entra permissions to grant Graph app roles (`AppRoleAssignment.ReadWrite.All` or Privileged Role Administrator).
+Prerequisites: Terraform >= 1.9 and an `az login` as an identity with Owner (or Contributor + User Access Administrator) on the target subscription. No Entra admin role is needed for the infrastructure — granting the managed identity's Graph permissions is a separate, optional phase (see below).
 
 ```bash
 cd terraform

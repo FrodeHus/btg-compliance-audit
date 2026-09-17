@@ -121,6 +121,12 @@ variable "log_retention_days" {
   description = "Interactive retention for the custom table, and for the workspace when this module creates it. Ignored for an existing workspace's own retention."
   type        = number
   default     = 90
+  validation {
+    # The Tables API rejects anything outside 4-730; there is no local schema check because the
+    # table resource runs with schema_validation_enabled = false.
+    condition     = var.log_retention_days >= 4 && var.log_retention_days <= 730
+    error_message = "log_retention_days must be between 4 and 730."
+  }
 }
 
 variable "alert_email_receivers" {

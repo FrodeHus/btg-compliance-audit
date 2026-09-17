@@ -25,11 +25,11 @@ locals {
   }]
 
   # Resolved workspace, whichever path was taken.
-  workspace_resource_id = local.use_existing_law ? var.existing_log_analytics_workspace_resource_id : module.law[0].resource_id
+  workspace_resource_id = local.use_existing_law ? var.existing_log_analytics_workspace_resource_id : one(module.law[*].resource_id)
 
   # The Logs Ingestion API requires workspace, DCE and DCR to be in the same region, so monitoring
   # resources follow the workspace rather than var.location.
-  workspace_location = local.use_existing_law ? data.azapi_resource.existing_law[0].output.location : var.location
+  workspace_location = local.use_existing_law ? one(data.azapi_resource.existing_law[*].location) : var.location
 
   runbook_name = "Test-BreakGlassCompliance"
   runbook_path = "${path.module}/../runbook/Test-BreakGlassCompliance.ps1"
@@ -51,9 +51,8 @@ module "resource_group" {
 data "azapi_resource" "existing_law" {
   count = local.use_existing_law ? 1 : 0
 
-  type                   = "Microsoft.OperationalInsights/workspaces@2023-09-01"
-  resource_id            = var.existing_log_analytics_workspace_resource_id
-  response_export_values = ["location", "properties.customerId"]
+  type        = "Microsoft.OperationalInsights/workspaces@2023-09-01"
+  resource_id = var.existing_log_analytics_workspace_resource_id
 }
 
 module "law" {
@@ -142,7 +141,7 @@ module "dcr" {
   depends_on = [azapi_resource.table]
 }
 
-# The AVM DCR module does not expose immutableId; read it back.
+# The AVM DCR module's root outputs do not include immutableId; read it back.
 data "azurerm_monitor_data_collection_rule" "dcr" {
   name                = module.dcr.name
   resource_group_name = module.resource_group.name

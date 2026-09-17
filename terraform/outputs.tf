@@ -34,7 +34,7 @@ output "graph_permission_request" {
     Resource      : ${module.automation.resource_id}
 
     Permissions requested (Microsoft Graph, application, read-only):
-    ${join("\n    ", [for r in sort(tolist(var.graph_app_roles)) : "- ${r}"])}
+    ${join("\n", [for r in sort(tolist(var.graph_app_roles)) : "- ${r}"])}
 
     Purpose: scheduled read-only verification that emergency-access (break-the-glass) accounts are
     excluded from Conditional Access and correctly hardened. The identity performs no writes to the

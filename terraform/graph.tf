@@ -22,8 +22,8 @@ resource "azuread_app_role_assignment" "graph" {
 
   lifecycle {
     precondition {
-      condition     = contains(keys(data.azuread_service_principal.msgraph[0].app_role_ids), each.value)
-      error_message = "'${each.value}' is not a Microsoft Graph application permission. Check graph_app_roles."
+      condition     = contains(keys(data.azuread_service_principal.msgraph[0].app_role_ids), each.key)
+      error_message = "'${each.key}' is not a Microsoft Graph application permission. Check graph_app_roles."
     }
   }
 }
