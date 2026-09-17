@@ -66,7 +66,7 @@ grant_graph_permissions = false
 enable_entra_signin_export = false              # see step 6
 ```
 
-Optional: uncomment and fill the `backend "azurerm"` block in `providers.tf` to store state remotely. State contains no secrets, but it does contain the BTG UPNs.
+Optional but intentionally disabled by default: a remote `backend "azurerm"` in `providers.tf` can be uncommented only in a local, security-reviewed copy. This repo leaves state local by default because Terraform state may contain BTG UPNs, object IDs, and other tenant metadata. Do not commit the remote-backend configuration unless you have explicitly accepted that risk and have a secure storage account, RBAC model, and retention policy.
 
 ### Using an existing Log Analytics workspace
 

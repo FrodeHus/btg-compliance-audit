@@ -11,8 +11,10 @@
 crash.log
 *.tfvars
 !terraform/terraform.tfvars.example
-.terraform.lock.hcl
 .terraform.tfstate.lock.info
+
+# Keep the lock file tracked so builds are reproducible and CI remains deterministic.
+# Local state is the default for this repo because BTG account identifiers may appear in state.
 
 # Editor / tooling
 .vscode/

@@ -26,6 +26,20 @@ Break-the-glass/
 
 ## What gets checked
 
+Every result is tagged with a category, so you can filter the table on one concern at a time (`BTGCompliance_CL | where Category == "CA"`). The check IDs are prefixed with the same code.
+
+| Category | Stands for | Scope of the checks | Asks the question |
+|---|---|---|---|
+| `CA` | Conditional Access | Every CA policy in the tenant, evaluated against every BTG account | Can a Conditional Access policy lock us out of our own tenant during an incident? |
+| `ACCT` | Account hygiene | Each individual BTG user object and its credentials | Is this account itself usable in an emergency and hardened against misuse? |
+| `ROLE` | Role assignments | Directory role assignments and PIM eligibility for each account | Will the account actually hold Global Administrator when we need it, without depending on PIM? |
+| `GRP` | Group posture | The security group(s) whose members are treated as BTG accounts | Could someone quietly add themselves to the group and inherit its CA exclusion? |
+| `USE` | Usage | Sign-in logs for each account over the lookback window | Has anyone used a break-glass account, and do we know why? |
+| `TNT` | Tenant guardrails | Tenant-wide settings that apply regardless of the accounts | Are the tenant-level prerequisites for this whole design in place? |
+| `SYS` | Runbook self-reporting | The run itself: authentication, account resolution, totals | Did the check actually run, and against the accounts we intended? |
+
+`SYS` records are about the tooling rather than your configuration, which makes them the ones to watch first: a `SYS.NoAccounts` failure or a `SYS.Auth` error means none of the other categories can be trusted for that run.
+
 | Category | CheckId | Severity on failure | What it verifies |
 |---|---|---|---|
 | CA | `CA.Excluded` / `CA.NotExcluded` | FAIL if account is in scope of an enabled or report-only policy and not excluded; WARN if not in scope but not explicitly excluded, or policy disabled | Each BTG account is excluded directly or via an excluded group. Role-based exclusion alone does not count. |
@@ -65,6 +79,20 @@ Raw Graph error text is kept out of the result records deliberately, since respo
 ## Scope
 
 Single tenant by design. The runbook authenticates with the Automation Account's system-assigned managed identity, which is a tenant-local service principal and cannot read another tenant's directory. To cover several tenants, deploy the stack once per tenant with its own Terraform state; a central hub would mean replacing the managed identity with a multi-tenant app registration, which is deliberately out of scope here.
+
+## State and security
+
+This repo intentionally keeps Terraform state local by default. The state file can include BTG account identifiers, object IDs, and other sensitive directory metadata, so remote state should only be enabled deliberately after a security review and with appropriate access controls.
+
+Do not commit a real `terraform.tfvars` file or any state file. The default is:
+
+```bash
+terraform init
+terraform plan -out tfplan
+terraform apply tfplan
+```
+
+If you choose to enable a remote backend, do it only in a local, reviewed copy and never as the repository default.
 
 ## Deploy
 
