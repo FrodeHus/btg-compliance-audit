@@ -40,6 +40,8 @@ Every result is tagged with a category, so you can filter the table on one conce
 
 `SYS` records are about the tooling rather than your configuration, which makes them the ones to watch first: a `SYS.NoAccounts` failure or a `SYS.Auth` error means none of the other categories can be trusted for that run.
 
+### Individual checks
+
 | Category | CheckId | Severity on failure | What it verifies |
 |---|---|---|---|
 | CA | `CA.Excluded` / `CA.NotExcluded` | FAIL if account is in scope of an enabled or report-only policy and not excluded; WARN if not in scope but not explicitly excluded, or policy disabled | Each BTG account is excluded directly or via an excluded group. Role-based exclusion alone does not count. |
@@ -70,7 +72,10 @@ Every result is tagged with a category, so you can filter the table on one conce
 | TNT | `TNT.Fido2KeyRestriction` | INFO | Key AAGUID allow-list is enforced; confirm spare keys are on it. |
 | TNT | `TNT.EntraPremium` | WARN | Entra ID P1/P2 present. |
 | TNT | `TNT.AccountCount` | FAIL < 2, WARN > `max_expected_accounts` | Two or more accounts, no unexpected extras. |
-| SYS | `SYS.Summary` | | One record per run with totals; used by the "runbook silent" alert. |
+| SYS | `SYS.Auth` | NOPERM/ERROR | Authentication to Graph succeeded. Terminates the run if not. |
+| SYS | `SYS.ResolveGroup` / `SYS.ResolveUser` | INFO, or NOPERM/ERROR | Each configured group and UPN resolved, and which accounts came out of it. |
+| SYS | `SYS.NoAccounts` | FAIL | At least one BTG account was resolved. Terminates the run if not — no other check would be meaningful. |
+| SYS | `SYS.Summary` | mirrors the worst status in the run | One record per run with totals and the Graph transport used. The job-failure alert keys off this record. |
 
 Each result carries one of six statuses: `PASS`, `FAIL`, `WARN`, `INFO`, `NOPERM` (the check could not be evaluated because the identity lacks the Graph permission — a blind spot, not a pass) and `ERROR` (could not be evaluated for another reason). The runbook throws when any FAIL, NOPERM or ERROR exists, so the Automation job itself shows as Failed.
 
