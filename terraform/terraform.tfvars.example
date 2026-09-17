@@ -1,0 +1,30 @@
+subscription_id = "00000000-0000-0000-0000-000000000000"
+location    = "norwayeast"
+name_prefix = "btg-compliance"
+
+# Identify break-the-glass accounts by group, by UPN, or both.
+break_glass_group_ids = ["00000000-0000-0000-0000-000000000000"]
+break_glass_upns      = []
+max_expected_accounts = 3
+
+lookback_days      = 7
+schedule_frequency = "Week"
+schedule_week_days = ["Monday"]
+schedule_timezone  = "Europe/Oslo"
+
+# Log Analytics: leave empty to create a workspace, or point at an existing one.
+# The DCE, DCR and alert rules are deployed into the workspace's region automatically.
+existing_log_analytics_workspace_resource_id = ""
+# existing_log_analytics_workspace_resource_id = "/subscriptions/<sub>/resourceGroups/rg-monitoring/providers/Microsoft.OperationalInsights/workspaces/law-sentinel-prod"
+
+table_name          = "BTGCompliance_CL"
+create_custom_table = true
+log_retention_days  = 90
+
+alert_email_receivers = {
+  soc = "soc@example.com"
+}
+
+# Set true only if the deploying identity is Security Administrator / Global Administrator
+# and SignInLogs are not already exported to a workspace you can query.
+enable_entra_signin_export = false

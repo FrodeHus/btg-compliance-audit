@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Terraform
+.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+*.tfvars
+!terraform/terraform.tfvars.example
+.terraform.lock.hcl
+.terraform.tfstate.lock.info
+
+# Editor / tooling
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local artifacts
+*.log
+
+# Output folders
+out/
