@@ -1,10 +1,8 @@
 # Break-the-glass account compliance monitor
 
-Entra ID emergency access account (break-the-glass accounts) are important for any organization to maintain and ensure are fully functioning in case of emergency.  
-This means it is crucial that these accounts follow certain rules so they actually work when they are needed.
+Entra ID break-the-glass (BTG) accounts only earn their keep if they still work the one time you need them — locked out of every Conditional Access policy, hardened against everyday use, permanently Global Administrator, and otherwise untouched. Configuration drift on any of that can quietly turn an emergency account into a liability.
 
-Automated, scheduled verification that Entra ID break-the-glass (BTG) accounts are configured the way an emergency demands: excluded from every Conditional Access policy, hardened, permanently Global Administrator, unused, and backed by tenant-level guardrails. Results land in a Log Analytics custom table and alert on drift.
-
+This project checks for that drift on a schedule: it verifies CA exclusion, account hardening, role assignments, group posture, sign-in activity, and tenant-level guardrails for each BTG account, writes the results to a Log Analytics custom table, and alerts when something no longer holds.
 
 Key project docs:
 
