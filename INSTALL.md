@@ -170,7 +170,7 @@ Test it: perform a planned, documented BTG sign-in test and confirm the alert e-
 | After CA changes | Manual runbook run. |
 | After BTG membership change | `terraform apply`. |
 | AVM module updates | Bump `version` pins in `main.tf`, `terraform plan`, review, apply. |
-| Runbook changes | Edit `runbook/Test-BreakGlassCompliance.ps1`, `terraform apply` – the content is inlined and republished. |
+| Runbook changes | Edit the entry point or the relevant file under `runbook/lib/`, `terraform apply` – `main.tf` reassembles and republishes the runbook content. |
 
 ## Uninstall
 
@@ -200,4 +200,4 @@ The Graph app-role assignments are removed with the managed identity. The custom
 | Runbook shows `Suspended` | Sandbox exceeded 3 h fair-share or memory. Very unlikely at this scale; check job **Errors** tab. |
 
 ---
-Security review required before production use. AI-generated content – verify before relying on it; final responsibility remains with you.
+This document was written with AI assistance. Verify the steps before relying on them in production.

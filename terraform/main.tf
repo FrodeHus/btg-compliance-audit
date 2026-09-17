@@ -31,8 +31,30 @@ locals {
   # resources follow the workspace rather than var.location.
   workspace_location = local.use_existing_law ? one(data.azapi_resource.existing_law[*].location) : var.location
 
-  runbook_name = "Test-BreakGlassCompliance"
-  runbook_path = "${path.module}/../runbook/Test-BreakGlassCompliance.ps1"
+  runbook_name    = "Test-BreakGlassCompliance"
+  runbook_path    = "${path.module}/../runbook/Test-BreakGlassCompliance.ps1"
+  runbook_lib_dir = "${path.module}/../runbook/lib"
+
+  # Each rule category lives in its own file under runbook/lib for maintainability. Azure
+  # Automation runbooks execute as a single script with no access to sibling files, so the
+  # published content is assembled here: the imports region in the main script (a block of
+  # dot-source statements used for local testing, delimited by the two markers below) is
+  # replaced with the concatenated content of the same files, in the same order.
+  runbook_lib_files = [
+    "Common.Helpers.ps1",
+    "Common.Auth.ps1",
+    "Resolve.BreakGlassAccounts.ps1",
+    "Checks.CA.ps1",
+    "Checks.Acct.ps1",
+    "Checks.Role.ps1",
+    "Checks.Grp.ps1",
+    "Checks.Use.ps1",
+    "Checks.Tnt.ps1",
+  ]
+  runbook_lib_content = join("\n", [for f in local.runbook_lib_files : file("${local.runbook_lib_dir}/${f}")])
+
+  runbook_main_raw = file(local.runbook_path)
+  runbook_content  = "${split("# RUNBOOK_LIB_IMPORTS_START", local.runbook_main_raw)[0]}${local.runbook_lib_content}${split("# RUNBOOK_LIB_IMPORTS_END", local.runbook_main_raw)[1]}"
 }
 
 # ---------------------------------------------------------------- resource group (AVM)
@@ -191,7 +213,7 @@ module "automation" {
       description  = "Verifies break-the-glass account posture: CA exclusion, hygiene, roles, sign-ins, tenant guardrails."
       log_progress = false
       log_verbose  = false
-      content      = file(local.runbook_path)
+      content      = local.runbook_content
       tags         = var.tags
     }
   }

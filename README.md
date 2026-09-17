@@ -1,6 +1,6 @@
 # Break-the-glass account compliance monitor
 
-This repository is published as open source for transparency, community review, and collaborative hardening of emergency-access monitoring in Microsoft Entra ID.
+This repository is open source so the checks can be reviewed and improved by anyone who relies on Entra ID emergency-access accounts.
 
 Key project docs:
 
@@ -13,7 +13,13 @@ Automated, scheduled verification that Entra ID break-the-glass (BTG) accounts a
 
 ```
 Break-the-glass/
-├── runbook/Test-BreakGlassCompliance.ps1   PowerShell 7.2 runbook (Az.Accounts only, Graph via REST)
+├── runbook/
+│   ├── Test-BreakGlassCompliance.ps1        Entry point: params, constants, orchestration (Az.Accounts only, Graph via REST)
+│   └── lib/                                 One file per concern, dot-sourced locally and inlined by Terraform for Azure
+│       ├── Common.Helpers.ps1               Result recording, Graph paging/retry, Logs Ingestion upload
+│       ├── Common.Auth.ps1                  Graph/Az authentication
+│       ├── Resolve.BreakGlassAccounts.ps1   Resolves BTG users/groups from the input parameters
+│       └── Checks.{CA,Acct,Role,Grp,Use,Tnt}.ps1   One check category each
 └── terraform/                               Azure Verified Modules deployment
     ├── providers.tf   azurerm / azapi / azuread / time
     ├── variables.tf   configuration surface
@@ -159,4 +165,4 @@ Graph is called with `Invoke-RestMethod` and a managed-identity token rather tha
 
 The per-user MFA check uses a beta Graph endpoint and degrades to WARN if unavailable. The sign-in check via Graph covers interactive sign-ins only; the Log Analytics alert covers non-interactive too. Legacy Identity Protection user-risk / sign-in-risk policies configured in the old portal blades are not readable via Graph; migrate them to risk-based CA policies, which are then covered by the CA check. The runbook does not verify that credentials are physically stored and split across locations, that a quarterly test sign-in actually happened, or that the FIDO2 keys still work; those belong in your emergency-access procedure and change calendar.
 
-Security review required before production use. AI-generated code: check the results thoroughly; final responsibility remains with you.
+This code was written with AI assistance. Review it carefully before running it against a production tenant — you are responsible for what it does.

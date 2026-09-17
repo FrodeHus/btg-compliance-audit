@@ -180,4 +180,4 @@ Common local-only outcomes:
 Add a BTG account to the include list of a **report-only** CA policy, re-run, and confirm `CA.NotExcluded` becomes FAIL for that policy. Revert. Similarly, register a Temporary Access Pass on a test BTG account and confirm `ACCT.OnlyFido2` fails.
 
 ---
-Never run this signed in as a break-glass account – it would create the very sign-in event `USE.NoSignIns` exists to detect. Security review required before production use; AI-generated content, verify before relying on it.
+Never run this signed in as a break-glass account — doing so creates the exact sign-in event `USE.NoSignIns` is meant to catch. This document was written with AI assistance; verify the steps before relying on them in production.
