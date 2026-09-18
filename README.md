@@ -30,7 +30,8 @@ Break-the-glass/
     └── terraform.tfvars.example
 ```
 
-<img width="1672" height="941" alt="image" src="https://github.com/user-attachments/assets/2aee3cc0-3bb1-4d19-87da-c963cbb302b4" />
+![](images/btg-audit-1.png)
+![](images/btg-audit-2.png)
 
 
 ## What gets checked
