@@ -213,8 +213,11 @@ module "automation" {
       description  = "Verifies break-the-glass account posture: CA exclusion, hygiene, roles, sign-ins, tenant guardrails."
       log_progress = false
       log_verbose  = false
-      content      = local.runbook_content
-      tags         = var.tags
+      # Explicit 0 (not the implicit null default) avoids a module validation bug on Terraform < 1.10
+      # where `v.log_activity_trace_level == null || contains(...)` still evaluates contains(null).
+      log_activity_trace_level = 0
+      content                  = local.runbook_content
+      tags                     = var.tags
     }
   }
 
