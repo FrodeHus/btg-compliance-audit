@@ -30,6 +30,9 @@ Break-the-glass/
     └── terraform.tfvars.example
 ```
 
+<img width="1672" height="941" alt="image" src="https://github.com/user-attachments/assets/2aee3cc0-3bb1-4d19-87da-c963cbb302b4" />
+
+
 ## What gets checked
 
 Every result is tagged with a category, so you can filter the table on one concern at a time (`BTGCompliance_CL | where Category == "CA"`). The check IDs are prefixed with the same code.
