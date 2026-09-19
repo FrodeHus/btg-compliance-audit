@@ -1,0 +1,46 @@
+name: Runbook validation
+
+on:
+  push:
+    paths:
+      - 'runbook/**'
+      - 'tests/**'
+      - 'PSScriptAnalyzerSettings.psd1'
+      # main.tf owns the lib file list that the build checks compare against.
+      - 'terraform/main.tf'
+      - '.github/workflows/runbook.yml'
+  pull_request:
+    paths:
+      - 'runbook/**'
+      - 'tests/**'
+      - 'PSScriptAnalyzerSettings.psd1'
+      - 'terraform/main.tf'
+      - '.github/workflows/runbook.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        run: Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -ErrorAction Stop
+
+      - name: PSScriptAnalyzer
+        run: |
+          $findings = Invoke-ScriptAnalyzer -Path runbook -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+          if ($findings) {
+              $findings | Format-Table -AutoSize -Wrap
+              throw "PSScriptAnalyzer reported $(@($findings).Count) issue(s)."
+          }
+          Write-Host 'PSScriptAnalyzer: clean.'
+
+      # Parses the script as terraform/main.tf assembles it, which is what actually runs in Azure
+      # Automation - the individual files in the repo never execute there.
+      - name: Runbook build checks
+        run: ./tests/Test-RunbookBuild.ps1
