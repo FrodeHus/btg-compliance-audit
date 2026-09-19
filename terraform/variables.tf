@@ -50,12 +50,24 @@ variable "max_expected_accounts" {
   description = "WARN when more than this many break-the-glass accounts are resolved."
   type        = number
   default     = 4
+  validation {
+    # TNT.AccountCount FAILs below two accounts, so a ceiling under two could never be satisfied.
+    condition     = var.max_expected_accounts >= 2
+    error_message = "max_expected_accounts must be at least 2."
+  }
 }
 
 variable "lookback_days" {
   description = "Sign-in lookback window for the unexpected-use check."
   type        = number
   default     = 7
+  validation {
+    # A non-positive value would put the runbook's cutoff in the future, so USE.NoSignIns would find
+    # no sign-ins and PASS every account - a false pass, the worst outcome for a compliance check.
+    # The ceiling is Entra's sign-in log retention with Entra ID P1/P2.
+    condition     = var.lookback_days >= 1 && var.lookback_days <= 30
+    error_message = "lookback_days must be between 1 and 30."
+  }
 }
 
 # ---------------------------------------------------------------- schedule

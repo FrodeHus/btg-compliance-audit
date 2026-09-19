@@ -81,11 +81,14 @@
 param(
     [string]$BreakGlassGroupIds = '',
     [string]$BreakGlassUpns = '',
-    [int]$LookbackDays = 7,
+    # A non-positive lookback would put the sign-in cutoff in the future, so USE.NoSignIns would find
+    # nothing and PASS every account. Upper bound is Entra's sign-in log retention with P1/P2.
+    [ValidateRange(1, 30)][int]$LookbackDays = 7,
     [string]$DceLogsIngestionEndpoint = '',
     [string]$DcrImmutableId = '',
     [string]$StreamName = 'Custom-BTGCompliance_CL',
-    [int]$MaxExpectedAccounts = 4,
+    # TNT.AccountCount FAILs below two accounts, so a ceiling under two could never be satisfied.
+    [ValidateRange(2, 100)][int]$MaxExpectedAccounts = 4,
     [switch]$FailOnWarn,
     [switch]$SkipLogAnalytics,
     [switch]$UseCurrentAzContext,
@@ -181,7 +184,18 @@ if ($noperm -gt 0) {
     Write-Warning 'These are blind spots, not passes. Re-run with -ShowErrors for the raw Graph responses.'
 }
 
-try { Send-ToLogAnalytics -Records $Results.ToArray() } catch { Write-Warning "Log Analytics ingestion failed: $($_.Exception.Message)" }
+try {
+    Send-ToLogAnalytics -Records $Results.ToArray()
+}
+catch {
+    # The compliance alert fires on records in the custom table, so a silent ingestion failure on an
+    # otherwise-passing run would leave no signal at all. Fail the job instead: the runbook-failed
+    # alert is the only one that can still reach anybody when ingestion is broken.
+    Write-Warning "Log Analytics ingestion failed: $($_.Exception.Message)"
+    Add-Result -CheckId 'SYS.Ingest' -Category SYS -Target 'tenant' -Status ERROR `
+        -Detail "Results could not be shipped to Log Analytics: $($_.Exception.Message)"
+    $errors++
+}
 
 Write-Results
 

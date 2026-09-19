@@ -4,12 +4,19 @@
 # Dot-sourced, never invoked standalone.
 
 function Invoke-AccountHygieneChecks {
-    <# Evaluates account-level hygiene for each resolved BTG user. #>
+    <# Evaluates account-level hygiene for each resolved BTG user.
+
+       Each independent Graph call sits in its own try/catch. A single catch around the whole user
+       would let one missing permission abort the remaining checks, reporting a single error instead
+       of one blind spot per check - and a check that never ran must never look like a check that
+       passed. Checks sharing one call are grouped, since they share the same blind spot. #>
     param([Parameter(Mandatory)][hashtable]$BtgUsers)
 
     foreach ($uid in $BtgUsers.Keys) {
         $u = $BtgUsers[$uid]
         $upn = $u.userPrincipalName
+
+        # -------- directory properties, already loaded by Resolve-BreakGlassAccounts (no Graph call)
         try {
             # Enabled
             if ($u.accountEnabled) { Add-Result -CheckId 'ACCT.Enabled' -Category ACCT -Target $upn -Status PASS -Detail 'Account is enabled.' }
@@ -35,7 +42,16 @@ function Invoke-AccountHygieneChecks {
             if ([string]$u.passwordPolicies -match 'DisablePasswordExpiration') { Add-Result -CheckId 'ACCT.PwdNeverExpires' -Category ACCT -Target $upn -Status PASS -Detail 'Password expiration disabled.' }
             else { Add-Result -CheckId 'ACCT.PwdNeverExpires' -Category ACCT -Target $upn -Status FAIL -Detail "passwordPolicies='$($u.passwordPolicies)'. An expired password during an outage locks you out; set DisablePasswordExpiration." }
 
-            # Authentication methods: FIDO2 only
+            # Password age - informational (rotation cadence is a policy decision)
+            if ($u.lastPasswordChangeDateTime) {
+                $age = [int]((Get-Date) - [datetime]$u.lastPasswordChangeDateTime).TotalDays
+                Add-Result -CheckId 'ACCT.PasswordAge' -Category ACCT -Target $upn -Status INFO -Detail "Password last changed $age day(s) ago." -Evidence @{ lastPasswordChangeDateTime = $u.lastPasswordChangeDateTime }
+            }
+        }
+        catch { Add-ErrorResult -CheckId 'ACCT.Evaluate' -Category ACCT -Target $upn -ErrorRecord $_ }
+
+        # -------- authentication methods: FIDO2 only (one call backs all three checks below)
+        try {
             $methods = Invoke-Graph -Uri "/users/$uid/authentication/methods"
             $types = @($methods | ForEach-Object { ($_.'@odata.type' -replace '#microsoft.graph.', '') })
             $fido = @($methods | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.fido2AuthenticationMethod' })
@@ -45,26 +61,23 @@ function Invoke-AccountHygieneChecks {
             if ($fido.Count -eq 1) { Add-Result -CheckId 'ACCT.Fido2Redundancy' -Category ACCT -Target $upn -Status WARN -Detail 'Only one FIDO2 key. Register a second key stored in a separate location.' }
             if ($disallowed.Count -gt 0) { Add-Result -CheckId 'ACCT.OnlyFido2' -Category ACCT -Target $upn -Status FAIL -Detail "Non-FIDO2 strong auth methods registered: $($disallowed -join ', '). Remove them so the account cannot be phished/SIM-swapped." -Evidence @{ methods = $types } }
             else { Add-Result -CheckId 'ACCT.OnlyFido2' -Category ACCT -Target $upn -Status PASS -Detail 'Only password + FIDO2 registered.' -Evidence @{ methods = $types } }
+        }
+        catch { Add-ErrorResult -CheckId 'ACCT.Fido2Registered', 'ACCT.OnlyFido2' -Category ACCT -Target $upn -ErrorRecord $_ }
 
-            # Per-user (legacy) MFA state must be disabled - CA/passkey governs auth, legacy MFA can block FIDO2 flows
-            try {
-                $req = Invoke-Graph -Uri "/users/$uid/authentication/requirements" -Beta
-                if ($req.perUserMfaState -eq 'disabled') { Add-Result -CheckId 'ACCT.PerUserMfaOff' -Category ACCT -Target $upn -Status PASS -Detail 'Legacy per-user MFA is disabled.' }
-                else { Add-Result -CheckId 'ACCT.PerUserMfaOff' -Category ACCT -Target $upn -Status FAIL -Detail "Legacy per-user MFA state is '$($req.perUserMfaState)'. Must be disabled; it bypasses CA exclusions and can force phone-based MFA." }
-            }
-            catch { Add-ErrorResult -CheckId 'ACCT.PerUserMfaOff' -Category ACCT -Target $upn -ErrorRecord $_ }
+        # -------- per-user (legacy) MFA must be disabled - CA/passkey governs auth, legacy MFA can block FIDO2 flows
+        try {
+            $req = Invoke-Graph -Uri "/users/$uid/authentication/requirements" -Beta
+            if ($req.perUserMfaState -eq 'disabled') { Add-Result -CheckId 'ACCT.PerUserMfaOff' -Category ACCT -Target $upn -Status PASS -Detail 'Legacy per-user MFA is disabled.' }
+            else { Add-Result -CheckId 'ACCT.PerUserMfaOff' -Category ACCT -Target $upn -Status FAIL -Detail "Legacy per-user MFA state is '$($req.perUserMfaState)'. Must be disabled; it bypasses CA exclusions and can force phone-based MFA." }
+        }
+        catch { Add-ErrorResult -CheckId 'ACCT.PerUserMfaOff' -Category ACCT -Target $upn -ErrorRecord $_ }
 
-            # Owned objects (apps, groups, devices) should be none
+        # -------- owned objects (apps, groups, devices) should be none
+        try {
             $owned = Invoke-Graph -Uri "/users/$uid/ownedObjects?`$select=id,displayName"
             if (@($owned).Count -gt 0) { Add-Result -CheckId 'ACCT.NoOwnedObjects' -Category ACCT -Target $upn -Status WARN -Detail "Account owns $(@($owned).Count) object(s) (apps/groups). BTG accounts should own nothing." -Evidence @{ owned = @($owned | ForEach-Object { @{ type = $_.'@odata.type'; name = $_.displayName; id = $_.id } }) } }
             else { Add-Result -CheckId 'ACCT.NoOwnedObjects' -Category ACCT -Target $upn -Status PASS -Detail 'Owns no directory objects.' }
-
-            # Password age - informational (rotation cadence is a policy decision)
-            if ($u.lastPasswordChangeDateTime) {
-                $age = [int]((Get-Date) - [datetime]$u.lastPasswordChangeDateTime).TotalDays
-                Add-Result -CheckId 'ACCT.PasswordAge' -Category ACCT -Target $upn -Status INFO -Detail "Password last changed $age day(s) ago." -Evidence @{ lastPasswordChangeDateTime = $u.lastPasswordChangeDateTime }
-            }
         }
-        catch { Add-ErrorResult -CheckId 'ACCT.Evaluate' -Category ACCT -Target $upn -ErrorRecord $_ }
+        catch { Add-ErrorResult -CheckId 'ACCT.NoOwnedObjects' -Category ACCT -Target $upn -ErrorRecord $_ }
     }
 }

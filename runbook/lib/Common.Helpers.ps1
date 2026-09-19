@@ -30,9 +30,11 @@ function Add-Result {
 
 function Add-ErrorResult {
     <# Turns an exception into a concise result. Permission problems get their own NOPERM status and
-       a one-line message; the raw error text is kept out of the output unless -ShowErrors is set. #>
+       a one-line message; the raw error text is kept out of the output unless -ShowErrors is set.
+       Accepts several CheckIds for the case where one Graph call backs several checks: each of them
+       is a separate blind spot, so each gets its own record rather than being collapsed into one. #>
     param(
-        [Parameter(Mandatory)][string]$CheckId,
+        [Parameter(Mandatory)][string[]]$CheckId,
         [Parameter(Mandatory)][string]$Category,
         [Parameter(Mandatory)][string]$Target,
         [Parameter(Mandatory)]$ErrorRecord
@@ -63,8 +65,10 @@ function Add-ErrorResult {
         $detail = "Check could not be completed: $first"
     }
 
-    Add-Result -CheckId $CheckId -Category $Category -Target $Target -Status $status -Detail $detail `
-        -Evidence @{ errorReason = $reason; requiredPermission = $scope }
+    foreach ($id in $CheckId) {
+        Add-Result -CheckId $id -Category $Category -Target $Target -Status $status -Detail $detail `
+            -Evidence @{ errorReason = $reason; requiredPermission = $scope }
+    }
 
     # Raw responses can contain UPNs, IPs and other identifiers, so they go to the console only -
     # never into the record shipped to Log Analytics.
@@ -179,15 +183,38 @@ function Send-ToLogAnalytics {
         Write-Warning 'DceLogsIngestionEndpoint / DcrImmutableId not set; results not shipped to Log Analytics.'
         return
     }
+    if (@($Records).Count -eq 0) { Write-Host 'No records to ship.'; return }
+
     $token = Get-PlainToken -ResourceUrl 'https://monitor.azure.com'
     $uri = "$($DceLogsIngestionEndpoint.TrimEnd('/'))/dataCollectionRules/$DcrImmutableId/streams/$StreamName`?api-version=2023-01-01"
     $headers = @{ Authorization = "Bearer $token" }
-    # Logs Ingestion API accepts max 1 MB per call; batch conservatively.
-    $batchSize = 200
-    for ($i = 0; $i -lt $Records.Count; $i += $batchSize) {
-        $chunk = $Records[$i..([math]::Min($i + $batchSize - 1, $Records.Count - 1))]
+
+    # The Logs Ingestion API rejects payloads over 1 MB. Record sizes differ by orders of magnitude
+    # (Evidence is empty for most checks but carries a list of sign-in events for USE.*), so batches
+    # are sized by serialised bytes - a fixed record count overflows on evidence-heavy runs.
+    $maxBytes = 900 * 1024   # headroom for array brackets, separators and request framing
+    $batches = [System.Collections.Generic.List[object]]::new()
+    $batch = [System.Collections.Generic.List[object]]::new()
+    $batchBytes = 0
+
+    foreach ($record in $Records) {
+        $size = [System.Text.Encoding]::UTF8.GetByteCount((ConvertTo-Json -InputObject $record -Depth 4 -Compress)) + 1
+        if ($size -gt $maxBytes) {
+            throw "Result record '$($record.CheckId)' serialises to $([int]($size / 1KB)) KB, over the $([int]($maxBytes / 1KB)) KB per-request limit. Reduce its Evidence."
+        }
+        if ($batch.Count -gt 0 -and ($batchBytes + $size) -gt $maxBytes) {
+            $batches.Add($batch.ToArray())
+            $batch.Clear()
+            $batchBytes = 0
+        }
+        $batch.Add($record)
+        $batchBytes += $size
+    }
+    if ($batch.Count -gt 0) { $batches.Add($batch.ToArray()) }
+
+    foreach ($chunk in $batches) {
         $body = ConvertTo-Json -InputObject @($chunk) -Depth 4 -Compress
         Invoke-RestMethod -Method POST -Uri $uri -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
     }
-    Write-Host "Shipped $($Records.Count) records to $StreamName."
+    Write-Host "Shipped $($Records.Count) record(s) to $StreamName in $($batches.Count) batch(es)."
 }
