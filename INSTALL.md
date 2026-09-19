@@ -142,7 +142,13 @@ BTGCompliance_CL
 | order by Status
 ```
 
-If the table is empty but the job output shows records, check the job output for `Log Analytics ingestion failed` – most often the `Monitoring Metrics Publisher` role assignment has not propagated yet (wait 5 minutes, re-run).
+If the table is empty but the job output shows records, check the order below – the first cause is by far the most common and is not a fault:
+
+1. **Wait.** The first data to reach a newly created table takes 5–15 minutes to become queryable. Until then the table returns zero rows with no error, which looks identical to a failure. Only investigate further if it is still empty after ~15 minutes.
+2. **Look for a `SYS.Ingest` record with status `ERROR`** in the job output, and for `Log Analytics ingestion failed` in the job's warning stream. The runbook adds that record and fails the job when the upload throws, so a genuine ingestion failure is never silent.
+3. If `SYS.Ingest` is present, the usual cause is that the `Monitoring Metrics Publisher` role assignment on the DCR has not propagated yet (wait 5 minutes, re-run).
+
+Note that `Write-Host` output does not appear in the Automation job's **Output** stream, so the runbook's progress lines are not a reliable way to confirm ingestion – use the `SYS.Ingest` record instead.
 
 ## 6. Enable sign-in alerting (recommended)
 

@@ -153,7 +153,10 @@ az role assignment create --assignee <your-upn> --role "Monitoring Metrics Publi
   --scope $(az monitor data-collection rule show -g rg-btg-compliance -n dcr-btg-compliance --query id -o tsv)
 ```
 
-Query `BTGCompliance_CL | where TimeGenerated > ago(15m)` after 2–5 minutes.
+Query `BTGCompliance_CL | where TimeGenerated > ago(15m)` after 2–5 minutes. Allow longer the first
+time data lands in a newly created table – 5–15 minutes is normal, and the table can return zero
+rows without error until then. An empty result in the first few minutes is not evidence of a
+problem; see the ingestion troubleshooting note in [INSTALL.md](INSTALL.md).
 
 ## 6. Debugging a single Graph call
 
