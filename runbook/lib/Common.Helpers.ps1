@@ -91,12 +91,18 @@ function Write-Results {
     }
 }
 
-function Get-PlainToken {
-    param([string]$ResourceUrl)
-    # Az.Accounts >= 2.17 supports -AsSecureString; older versions return plain text.
+function Get-AccessToken {
+    <# Returns the token as a SecureString, which Invoke-RestMethod -Authentication Bearer consumes
+       directly. Nothing here decrypts it: a bearer token for Graph or Monitor is a live credential,
+       and materialising one as a plain string leaves it readable in the process for the lifetime of
+       the run and puts it one Write-Output away from the job record.
+       Az.Accounts >= 2.17 returns a SecureString already; older versions return plain text. #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '',
+        Justification = 'Wraps a token Az.Accounts < 2.17 has already returned as plain text. The plaintext originates upstream; converting it here narrows exposure rather than creating it, and there is no encrypted form to read instead.')]
+    param([Parameter(Mandatory)][string]$ResourceUrl)
     try { $t = Get-AzAccessToken -ResourceUrl $ResourceUrl -AsSecureString } catch { $t = Get-AzAccessToken -ResourceUrl $ResourceUrl }
-    if ($t.Token -is [securestring]) { return (ConvertFrom-SecureString -SecureString $t.Token -AsPlainText) }
-    return [string]$t.Token
+    if ($t.Token -is [securestring]) { return $t.Token }
+    return (ConvertTo-SecureString -String ([string]$t.Token) -AsPlainText -Force)
 }
 
 function Invoke-Graph {
@@ -111,11 +117,14 @@ function Invoke-Graph {
     )
     if ($Uri -notmatch '^https://') { $Uri = ($(if ($Beta) { $GraphBeta } else { $GraphV1 })) + $Uri }
     $headers = @{}
-    if ($script:GraphTransport -eq 'Token') {
-        if (-not $script:GraphToken) { $script:GraphToken = Get-PlainToken -ResourceUrl 'https://graph.microsoft.com' }
-        $headers['Authorization'] = "Bearer $($script:GraphToken)"
-    }
     if ($ConsistencyLevel) { $headers['ConsistencyLevel'] = 'eventual' }
+
+    # Splatted rather than set as an Authorization header, so the token stays a SecureString.
+    $auth = @{}
+    if ($script:GraphTransport -eq 'Token') {
+        if (-not $script:GraphToken) { $script:GraphToken = Get-AccessToken -ResourceUrl 'https://graph.microsoft.com' }
+        $auth = @{ Authentication = 'Bearer'; Token = $script:GraphToken }
+    }
 
     $all = [System.Collections.Generic.List[object]]::new()
     $next = $Uri
@@ -127,7 +136,7 @@ function Invoke-Graph {
                     $resp = Invoke-MgGraphRequest -Method $Method -Uri $next -Headers $headers -OutputType PSObject
                 }
                 else {
-                    $resp = Invoke-RestMethod -Method $Method -Uri $next -Headers $headers -ContentType 'application/json'
+                    $resp = Invoke-RestMethod -Method $Method -Uri $next -Headers $headers -ContentType 'application/json' @auth
                 }
                 break
             }
@@ -185,9 +194,8 @@ function Send-ToLogAnalytics {
     }
     if (@($Records).Count -eq 0) { Write-Host 'No records to ship.'; return }
 
-    $token = Get-PlainToken -ResourceUrl 'https://monitor.azure.com'
+    $token = Get-AccessToken -ResourceUrl 'https://monitor.azure.com'
     $uri = "$($DceLogsIngestionEndpoint.TrimEnd('/'))/dataCollectionRules/$DcrImmutableId/streams/$StreamName`?api-version=2023-01-01"
-    $headers = @{ Authorization = "Bearer $token" }
 
     # The Logs Ingestion API rejects payloads over 1 MB. Record sizes differ by orders of magnitude
     # (Evidence is empty for most checks but carries a list of sign-in events for USE.*), so batches
@@ -214,7 +222,7 @@ function Send-ToLogAnalytics {
 
     foreach ($chunk in $batches) {
         $body = ConvertTo-Json -InputObject @($chunk) -Depth 4 -Compress
-        Invoke-RestMethod -Method POST -Uri $uri -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
+        Invoke-RestMethod -Method POST -Uri $uri -Authentication Bearer -Token $token -ContentType 'application/json' -Body $body | Out-Null
     }
     Write-Host "Shipped $($Records.Count) record(s) to $StreamName in $($batches.Count) batch(es)."
 }

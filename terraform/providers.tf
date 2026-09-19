@@ -44,6 +44,11 @@ provider "azurerm" {
   storage_use_azuread = true
 }
 
-provider "azapi" {}
+# Pinned to the same subscription as azurerm. Without it azapi falls back to ARM_SUBSCRIPTION_ID or
+# the az CLI's active subscription, so the table and the workspace lookup could silently target a
+# different subscription than everything else when var.subscription_id is set explicitly.
+provider "azapi" {
+  subscription_id = var.subscription_id
+}
 
 provider "azuread" {}

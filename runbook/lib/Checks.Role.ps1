@@ -10,6 +10,12 @@ function Invoke-RoleAssignmentChecks {
         [Parameter(Mandatory)][string]$GlobalAdminRoleId
     )
 
+    # Two Graph calls per principal, and BTG accounts normally share their groups - without a cache
+    # the same group is queried once per member, so the sweep is O(users x groups) rather than one
+    # lookup per distinct principal. Cached per call, not across runs, so results stay current.
+    $activeCache = @{}
+    $eligibleCache = @{}
+
     foreach ($uid in $BtgUsers.Keys) {
         $upn = $BtgUsers[$uid].userPrincipalName
         try {
@@ -18,10 +24,16 @@ function Invoke-RoleAssignmentChecks {
             $eligible = [System.Collections.Generic.List[object]]::new()
             foreach ($principalId in $principalIds) {
                 $via = if ($principalId -eq $uid) { 'direct' } else { "group:$principalId" }
-                $a = Invoke-Graph -Uri "/roleManagement/directory/roleAssignmentScheduleInstances?`$filter=principalId eq '$principalId'&`$expand=roleDefinition(`$select=id,displayName)"
-                foreach ($x in $a) { $active.Add([pscustomobject]@{ via = $via; role = $x.roleDefinition.displayName; roleId = $x.roleDefinitionId; scope = $x.directoryScopeId; type = $x.assignmentType; end = $x.endDateTime }) }
-                $e = Invoke-Graph -Uri "/roleManagement/directory/roleEligibilityScheduleInstances?`$filter=principalId eq '$principalId'&`$expand=roleDefinition(`$select=id,displayName)"
-                foreach ($x in $e) { $eligible.Add([pscustomobject]@{ via = $via; role = $x.roleDefinition.displayName; roleId = $x.roleDefinitionId; scope = $x.directoryScopeId; end = $x.endDateTime }) }
+                # Cached separately: if the second call throws, the first must not be left looking
+                # complete for the next user that shares this principal.
+                if (-not $activeCache.ContainsKey($principalId)) {
+                    $activeCache[$principalId] = @(Invoke-Graph -Uri "/roleManagement/directory/roleAssignmentScheduleInstances?`$filter=principalId eq '$principalId'&`$expand=roleDefinition(`$select=id,displayName)")
+                }
+                if (-not $eligibleCache.ContainsKey($principalId)) {
+                    $eligibleCache[$principalId] = @(Invoke-Graph -Uri "/roleManagement/directory/roleEligibilityScheduleInstances?`$filter=principalId eq '$principalId'&`$expand=roleDefinition(`$select=id,displayName)")
+                }
+                foreach ($x in $activeCache[$principalId]) { $active.Add([pscustomobject]@{ via = $via; role = $x.roleDefinition.displayName; roleId = $x.roleDefinitionId; scope = $x.directoryScopeId; type = $x.assignmentType; end = $x.endDateTime }) }
+                foreach ($x in $eligibleCache[$principalId]) { $eligible.Add([pscustomobject]@{ via = $via; role = $x.roleDefinition.displayName; roleId = $x.roleDefinitionId; scope = $x.directoryScopeId; end = $x.endDateTime }) }
             }
 
             $ga = @($active | Where-Object { $_.roleId -eq $GlobalAdminRoleId -and $_.scope -eq '/' })

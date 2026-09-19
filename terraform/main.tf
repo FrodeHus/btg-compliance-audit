@@ -3,7 +3,6 @@ data "azurerm_client_config" "current" {}
 
 locals {
   use_existing_law = var.existing_log_analytics_workspace_resource_id != ""
-  table_name       = var.table_name
   stream_name      = "Custom-${var.table_name}"
 
   # Canonical schema. The DCR stream declaration and the Tables API disagree on the datetime
@@ -96,7 +95,7 @@ resource "azapi_resource" "table" {
   count = var.create_custom_table ? 1 : 0
 
   type      = "Microsoft.OperationalInsights/workspaces/tables@2022-10-01"
-  name      = local.table_name
+  name      = var.table_name
   parent_id = local.workspace_resource_id
 
   body = {
@@ -105,7 +104,7 @@ resource "azapi_resource" "table" {
       retentionInDays      = var.log_retention_days
       totalRetentionInDays = var.log_retention_days
       schema = {
-        name        = local.table_name
+        name        = var.table_name
         description = "Break-the-glass account compliance check results"
         columns     = local.table_api_columns
       }

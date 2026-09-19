@@ -35,7 +35,11 @@ variable "break_glass_group_ids" {
   type        = list(string)
   default     = []
   validation {
-    condition     = alltrue([for g in var.break_glass_group_ids : can(regex("^[0-9a-fA-F-]{36}$", g))])
+    # Positional, not just "36 characters of hex and hyphen" - the looser form accepts a string of
+    # 36 hyphens, and a malformed ID surfaces as a confusing Graph 404 at runbook time instead.
+    condition = alltrue([for g in var.break_glass_group_ids :
+      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", g))
+    ])
     error_message = "break_glass_group_ids must be object IDs (GUIDs)."
   }
 }
@@ -85,6 +89,18 @@ variable "schedule_week_days" {
   description = "Days the runbook runs when schedule_frequency = Week."
   type        = set(string)
   default     = ["Monday"]
+  validation {
+    # The Automation API rejects anything else, but only at apply time and after most of the stack
+    # has been created; catching a typo like "Mondays" during plan is cheaper.
+    condition = alltrue([for d in var.schedule_week_days : contains(
+      ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], d
+    )])
+    error_message = "schedule_week_days must be full English day names, e.g. Monday."
+  }
+  validation {
+    condition     = length(var.schedule_week_days) > 0
+    error_message = "schedule_week_days must not be empty."
+  }
 }
 
 variable "schedule_timezone" {

@@ -35,7 +35,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "compliance_fail" {
 
   criteria {
     query                   = <<-KQL
-      ${local.table_name}
+      ${var.table_name}
       | where Status in ("FAIL", "ERROR", "NOPERM")
       | where CheckId != "SYS.Summary"
       | summarize Failures = count(), Checks = make_set(CheckId, 50), Targets = make_set(Target, 50) by RunId
