@@ -91,7 +91,7 @@ output "dcr_immutable_id" {
 }
 
 output "compliance_table" {
-  value = local.table_name
+  value = var.table_name
 }
 
 output "compliance_table_created" {

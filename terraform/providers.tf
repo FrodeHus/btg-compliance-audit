@@ -1,5 +1,9 @@
 terraform {
-  required_version = ">= 1.9"
+  # 1.12 is the floor, not a preference: it is the first release where `||` short-circuits in a
+  # variable validation block. Below it, the AVM modules' `var.x == null || var.x.y == ...` guards
+  # still evaluate the right-hand side against null, and `terraform validate` fails with 11 errors
+  # inside the vendored automation, dce and dcr modules before it ever reaches this configuration.
+  required_version = ">= 1.12"
 
   required_providers {
     azurerm = {
@@ -40,6 +44,11 @@ provider "azurerm" {
   storage_use_azuread = true
 }
 
-provider "azapi" {}
+# Pinned to the same subscription as azurerm. Without it azapi falls back to ARM_SUBSCRIPTION_ID or
+# the az CLI's active subscription, so the table and the workspace lookup could silently target a
+# different subscription than everything else when var.subscription_id is set explicitly.
+provider "azapi" {
+  subscription_id = var.subscription_id
+}
 
 provider "azuread" {}

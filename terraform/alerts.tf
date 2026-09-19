@@ -1,6 +1,18 @@
 # No AVM Terraform resource modules exist yet for action groups or scheduled query rules,
 # so these use native azurerm resources.
 
+# An action group with no receivers is valid and sometimes deliberate - alerts can be consumed from
+# Azure Monitor or Sentinel, or a receiver added out of band. But it is silent by default, and all
+# three rules below route here, so it deserves to be said out loud rather than discovered during an
+# incident. A check block warns without blocking the deliberate case; a variable validation could
+# not tell the two apart.
+check "alert_receivers_configured" {
+  assert {
+    condition     = length(var.alert_email_receivers) > 0
+    error_message = "alert_email_receivers is empty, so ag-${var.name_prefix} has no receivers and no alert will notify anyone. Set at least one receiver, or ignore this if alerts are consumed another way."
+  }
+}
+
 resource "azurerm_monitor_action_group" "security" {
   name                = "ag-${var.name_prefix}"
   resource_group_name = module.resource_group.name
@@ -35,7 +47,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "compliance_fail" {
 
   criteria {
     query                   = <<-KQL
-      ${local.table_name}
+      ${var.table_name}
       | where Status in ("FAIL", "ERROR", "NOPERM")
       | where CheckId != "SYS.Summary"
       | summarize Failures = count(), Checks = make_set(CheckId, 50), Targets = make_set(Target, 50) by RunId

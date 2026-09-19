@@ -34,6 +34,11 @@ resource "azuread_app_role_assignment" "graph" {
 data "azuread_group" "btg" {
   for_each  = var.resolve_btg_group_members ? toset(var.break_glass_group_ids) : toset([])
   object_id = each.value
+
+  # The runbook resolves accounts through /transitiveMembers, so the alert must match. Without this
+  # an account reachable only through a nested group is audited weekly but never alerted on in real
+  # time - a silent blind spot in the highest-severity rule in the stack.
+  include_transitive_members = true
 }
 
 data "azuread_users" "btg_group_members" {

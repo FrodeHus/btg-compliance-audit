@@ -4,10 +4,14 @@ on:
   push:
     paths:
       - 'terraform/**'
+      # main.tf reads every runbook file through file(), so removing or renaming one breaks the
+      # configuration even though nothing under terraform/ changed.
+      - 'runbook/**'
       - '.github/workflows/terraform.yml'
   pull_request:
     paths:
       - 'terraform/**'
+      - 'runbook/**'
       - '.github/workflows/terraform.yml'
 
 jobs:
@@ -24,7 +28,9 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          # Pinned to the floor declared in providers.tf rather than the latest release, so CI fails
+          # if the configuration ever starts depending on something newer than it claims to need.
+          terraform_version: 1.12.2
 
       - name: Terraform format check
         working-directory: terraform

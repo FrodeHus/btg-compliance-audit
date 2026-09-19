@@ -3,7 +3,6 @@ data "azurerm_client_config" "current" {}
 
 locals {
   use_existing_law = var.existing_log_analytics_workspace_resource_id != ""
-  table_name       = var.table_name
   stream_name      = "Custom-${var.table_name}"
 
   # Canonical schema. The DCR stream declaration and the Tables API disagree on the datetime
@@ -11,7 +10,12 @@ locals {
   table_columns = [
     { name = "TimeGenerated", type = "datetime" },
     { name = "RunId", type = "string" },
-    { name = "TenantId", type = "string" },
+    # Not "TenantId": Log Analytics adds that to every table as a standard guid column, so the
+    # Tables API silently drops a custom one and the DCR then fails validation with
+    # "transform output columns do not match ... TenantId [produced:'String', output:'Guid']".
+    # The name is also wrong for this value - it is the tenant that was audited, which need not be
+    # the tenant the workspace lives in.
+    { name = "AuditedTenantId", type = "string" },
     { name = "CheckId", type = "string" },
     { name = "Category", type = "string" },
     { name = "Target", type = "string" },
@@ -96,7 +100,7 @@ resource "azapi_resource" "table" {
   count = var.create_custom_table ? 1 : 0
 
   type      = "Microsoft.OperationalInsights/workspaces/tables@2022-10-01"
-  name      = local.table_name
+  name      = var.table_name
   parent_id = local.workspace_resource_id
 
   body = {
@@ -105,7 +109,7 @@ resource "azapi_resource" "table" {
       retentionInDays      = var.log_retention_days
       totalRetentionInDays = var.log_retention_days
       schema = {
-        name        = local.table_name
+        name        = var.table_name
         description = "Break-the-glass account compliance check results"
         columns     = local.table_api_columns
       }
@@ -213,8 +217,10 @@ module "automation" {
       description  = "Verifies break-the-glass account posture: CA exclusion, hygiene, roles, sign-ins, tenant guardrails."
       log_progress = false
       log_verbose  = false
-      # Explicit 0 (not the implicit null default) avoids a module validation bug on Terraform < 1.10
-      # where `v.log_activity_trace_level == null || contains(...)` still evaluates contains(null).
+      # Explicit 0 rather than the implicit null default. This also sidesteps the non-short-circuit
+      # validation bug (`v.log_activity_trace_level == null || contains(...)` still evaluating
+      # contains(null)), which is why required_version is >= 1.12 - measured, not assumed: without
+      # this line 1.11.4 reports 12 validation errors and 1.12.2 reports none.
       log_activity_trace_level = 0
       content                  = local.runbook_content
       tags                     = var.tags

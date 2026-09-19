@@ -14,15 +14,16 @@ function Add-Result {
         $Evidence = $null
     )
     $Results.Add([pscustomobject]@{
-            TimeGenerated = (Get-Date).ToUniversalTime().ToString('o')
-            RunId         = $RunId
-            TenantId      = $script:TenantId
-            CheckId       = $CheckId
-            Category      = $Category
-            Target        = $Target
-            Status        = $Status
-            Detail        = $Detail
-            Evidence      = if ($null -eq $Evidence) { '' } else { ($Evidence | ConvertTo-Json -Depth 6 -Compress) }
+            TimeGenerated   = (Get-Date).ToUniversalTime().ToString('o')
+            RunId           = $RunId
+            # Not TenantId: Log Analytics reserves that name on every table as a guid column.
+            AuditedTenantId = $script:TenantId
+            CheckId         = $CheckId
+            Category        = $Category
+            Target          = $Target
+            Status          = $Status
+            Detail          = $Detail
+            Evidence        = if ($null -eq $Evidence) { '' } else { ($Evidence | ConvertTo-Json -Depth 6 -Compress) }
         })
     $colour = switch ($Status) { 'PASS' { 'Green' } 'FAIL' { 'Red' } 'WARN' { 'Yellow' } 'ERROR' { 'Magenta' } 'NOPERM' { 'DarkYellow' } default { 'Gray' } }
     Write-Host ("[{0,-6}] {1,-4} {2,-28} {3} :: {4}" -f $Status, $Category, $CheckId, $Target, $Detail) -ForegroundColor $colour
@@ -30,9 +31,11 @@ function Add-Result {
 
 function Add-ErrorResult {
     <# Turns an exception into a concise result. Permission problems get their own NOPERM status and
-       a one-line message; the raw error text is kept out of the output unless -ShowErrors is set. #>
+       a one-line message; the raw error text is kept out of the output unless -ShowErrors is set.
+       Accepts several CheckIds for the case where one Graph call backs several checks: each of them
+       is a separate blind spot, so each gets its own record rather than being collapsed into one. #>
     param(
-        [Parameter(Mandatory)][string]$CheckId,
+        [Parameter(Mandatory)][string[]]$CheckId,
         [Parameter(Mandatory)][string]$Category,
         [Parameter(Mandatory)][string]$Target,
         [Parameter(Mandatory)]$ErrorRecord
@@ -63,8 +66,10 @@ function Add-ErrorResult {
         $detail = "Check could not be completed: $first"
     }
 
-    Add-Result -CheckId $CheckId -Category $Category -Target $Target -Status $status -Detail $detail `
-        -Evidence @{ errorReason = $reason; requiredPermission = $scope }
+    foreach ($id in $CheckId) {
+        Add-Result -CheckId $id -Category $Category -Target $Target -Status $status -Detail $detail `
+            -Evidence @{ errorReason = $reason; requiredPermission = $scope }
+    }
 
     # Raw responses can contain UPNs, IPs and other identifiers, so they go to the console only -
     # never into the record shipped to Log Analytics.
@@ -87,12 +92,18 @@ function Write-Results {
     }
 }
 
-function Get-PlainToken {
-    param([string]$ResourceUrl)
-    # Az.Accounts >= 2.17 supports -AsSecureString; older versions return plain text.
+function Get-AccessToken {
+    <# Returns the token as a SecureString, which Invoke-RestMethod -Authentication Bearer consumes
+       directly. Nothing here decrypts it: a bearer token for Graph or Monitor is a live credential,
+       and materialising one as a plain string leaves it readable in the process for the lifetime of
+       the run and puts it one Write-Output away from the job record.
+       Az.Accounts >= 2.17 returns a SecureString already; older versions return plain text. #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '',
+        Justification = 'Wraps a token Az.Accounts < 2.17 has already returned as plain text. The plaintext originates upstream; converting it here narrows exposure rather than creating it, and there is no encrypted form to read instead.')]
+    param([Parameter(Mandatory)][string]$ResourceUrl)
     try { $t = Get-AzAccessToken -ResourceUrl $ResourceUrl -AsSecureString } catch { $t = Get-AzAccessToken -ResourceUrl $ResourceUrl }
-    if ($t.Token -is [securestring]) { return (ConvertFrom-SecureString -SecureString $t.Token -AsPlainText) }
-    return [string]$t.Token
+    if ($t.Token -is [securestring]) { return $t.Token }
+    return (ConvertTo-SecureString -String ([string]$t.Token) -AsPlainText -Force)
 }
 
 function Invoke-Graph {
@@ -107,11 +118,14 @@ function Invoke-Graph {
     )
     if ($Uri -notmatch '^https://') { $Uri = ($(if ($Beta) { $GraphBeta } else { $GraphV1 })) + $Uri }
     $headers = @{}
-    if ($script:GraphTransport -eq 'Token') {
-        if (-not $script:GraphToken) { $script:GraphToken = Get-PlainToken -ResourceUrl 'https://graph.microsoft.com' }
-        $headers['Authorization'] = "Bearer $($script:GraphToken)"
-    }
     if ($ConsistencyLevel) { $headers['ConsistencyLevel'] = 'eventual' }
+
+    # Splatted rather than set as an Authorization header, so the token stays a SecureString.
+    $auth = @{}
+    if ($script:GraphTransport -eq 'Token') {
+        if (-not $script:GraphToken) { $script:GraphToken = Get-AccessToken -ResourceUrl 'https://graph.microsoft.com' }
+        $auth = @{ Authentication = 'Bearer'; Token = $script:GraphToken }
+    }
 
     $all = [System.Collections.Generic.List[object]]::new()
     $next = $Uri
@@ -123,7 +137,7 @@ function Invoke-Graph {
                     $resp = Invoke-MgGraphRequest -Method $Method -Uri $next -Headers $headers -OutputType PSObject
                 }
                 else {
-                    $resp = Invoke-RestMethod -Method $Method -Uri $next -Headers $headers -ContentType 'application/json'
+                    $resp = Invoke-RestMethod -Method $Method -Uri $next -Headers $headers -ContentType 'application/json' @auth
                 }
                 break
             }
@@ -179,15 +193,37 @@ function Send-ToLogAnalytics {
         Write-Warning 'DceLogsIngestionEndpoint / DcrImmutableId not set; results not shipped to Log Analytics.'
         return
     }
-    $token = Get-PlainToken -ResourceUrl 'https://monitor.azure.com'
+    if (@($Records).Count -eq 0) { Write-Host 'No records to ship.'; return }
+
+    $token = Get-AccessToken -ResourceUrl 'https://monitor.azure.com'
     $uri = "$($DceLogsIngestionEndpoint.TrimEnd('/'))/dataCollectionRules/$DcrImmutableId/streams/$StreamName`?api-version=2023-01-01"
-    $headers = @{ Authorization = "Bearer $token" }
-    # Logs Ingestion API accepts max 1 MB per call; batch conservatively.
-    $batchSize = 200
-    for ($i = 0; $i -lt $Records.Count; $i += $batchSize) {
-        $chunk = $Records[$i..([math]::Min($i + $batchSize - 1, $Records.Count - 1))]
-        $body = ConvertTo-Json -InputObject @($chunk) -Depth 4 -Compress
-        Invoke-RestMethod -Method POST -Uri $uri -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
+
+    # The Logs Ingestion API rejects payloads over 1 MB. Record sizes differ by orders of magnitude
+    # (Evidence is empty for most checks but carries a list of sign-in events for USE.*), so batches
+    # are sized by serialised bytes - a fixed record count overflows on evidence-heavy runs.
+    $maxBytes = 900 * 1024   # headroom for array brackets, separators and request framing
+    $batches = [System.Collections.Generic.List[object]]::new()
+    $batch = [System.Collections.Generic.List[object]]::new()
+    $batchBytes = 0
+
+    foreach ($record in $Records) {
+        $size = [System.Text.Encoding]::UTF8.GetByteCount((ConvertTo-Json -InputObject $record -Depth 4 -Compress)) + 1
+        if ($size -gt $maxBytes) {
+            throw "Result record '$($record.CheckId)' serialises to $([int]($size / 1KB)) KB, over the $([int]($maxBytes / 1KB)) KB per-request limit. Reduce its Evidence."
+        }
+        if ($batch.Count -gt 0 -and ($batchBytes + $size) -gt $maxBytes) {
+            $batches.Add($batch.ToArray())
+            $batch.Clear()
+            $batchBytes = 0
+        }
+        $batch.Add($record)
+        $batchBytes += $size
     }
-    Write-Host "Shipped $($Records.Count) records to $StreamName."
+    if ($batch.Count -gt 0) { $batches.Add($batch.ToArray()) }
+
+    foreach ($chunk in $batches) {
+        $body = ConvertTo-Json -InputObject @($chunk) -Depth 4 -Compress
+        Invoke-RestMethod -Method POST -Uri $uri -Authentication Bearer -Token $token -ContentType 'application/json' -Body $body | Out-Null
+    }
+    Write-Host "Shipped $($Records.Count) record(s) to $StreamName in $($batches.Count) batch(es)."
 }

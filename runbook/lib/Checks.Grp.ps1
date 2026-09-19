@@ -20,16 +20,24 @@ function Invoke-GroupPostureChecks {
             else { Add-Result -CheckId 'GRP.CloudOnly' -Category GRP -Target $name -Status PASS -Detail 'Cloud-only group.' }
 
             if (-not $g.securityEnabled -or $g.mailEnabled) { Add-Result -CheckId 'GRP.SecurityGroup' -Category GRP -Target $name -Status WARN -Detail "securityEnabled=$($g.securityEnabled), mailEnabled=$($g.mailEnabled). Expect a plain security group." }
+        }
+        catch { Add-ErrorResult -CheckId 'GRP.Evaluate' -Category GRP -Target $name -ErrorRecord $_ }
 
+        # Owners and members are separate Graph calls, so they get separate try/catch blocks: a
+        # failure reading owners must not silently take GRP.OnlyUsers with it.
+        try {
             $owners = Invoke-Graph -Uri "/groups/$gid/owners?`$select=id,displayName,userPrincipalName"
             if (@($owners).Count -gt 0) { Add-Result -CheckId 'GRP.NoOwners' -Category GRP -Target $name -Status WARN -Detail "Group has $(@($owners).Count) owner(s). Owners can change membership; prefer no owners and manage via GA." -Evidence @{ owners = @($owners | ForEach-Object { $_.userPrincipalName ?? $_.displayName }) } }
             else { Add-Result -CheckId 'GRP.NoOwners' -Category GRP -Target $name -Status PASS -Detail 'No owners.' }
+        }
+        catch { Add-ErrorResult -CheckId 'GRP.NoOwners' -Category GRP -Target $name -ErrorRecord $_ }
 
+        try {
             $members = Invoke-Graph -Uri "/groups/$gid/members?`$select=id,displayName,userPrincipalName"
             $nonUsers = @($members | Where-Object { $_.'@odata.type' -ne '#microsoft.graph.user' })
             if ($nonUsers.Count -gt 0) { Add-Result -CheckId 'GRP.OnlyUsers' -Category GRP -Target $name -Status FAIL -Detail "Group contains $($nonUsers.Count) non-user member(s) (nested groups / service principals / devices)." -Evidence @{ members = @($nonUsers | ForEach-Object { @{ type = $_.'@odata.type'; name = $_.displayName } }) } }
             else { Add-Result -CheckId 'GRP.OnlyUsers' -Category GRP -Target $name -Status PASS -Detail "All $(@($members).Count) member(s) are users." -Evidence @{ members = @($members.userPrincipalName) } }
         }
-        catch { Add-ErrorResult -CheckId 'GRP.Evaluate' -Category GRP -Target $name -ErrorRecord $_ }
+        catch { Add-ErrorResult -CheckId 'GRP.OnlyUsers' -Category GRP -Target $name -ErrorRecord $_ }
     }
 }

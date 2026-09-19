@@ -13,12 +13,16 @@ function Connect-BreakGlassGraph {
        UserAuthenticationMethod.Read.All, RoleManagement.Read.Directory, Policy.Read.All and
        Policy.Read.AuthenticationMethod are absent, so those checks return 403 no matter which Entra
        role you hold. Use -UseGraphPowerShell (or -GraphAccessToken) instead. See LOCAL_TEST.md. #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '',
+        Justification = '-GraphAccessToken is a caller-supplied string for local testing, so the plaintext already exists in the caller''s session. Wrapping it is what lets the rest of the run treat every token as a SecureString.')]
+    param()
     try {
         $needAz = (-not $SkipLogAnalytics -and $DceLogsIngestionEndpoint -and $DcrImmutableId)
 
         if ($GraphAccessToken) {
             $script:GraphTransport = 'Token'
-            $script:GraphToken = $GraphAccessToken
+            # Invoke-Graph authenticates with -Authentication Bearer, which takes a SecureString.
+            $script:GraphToken = ConvertTo-SecureString -String $GraphAccessToken -AsPlainText -Force
             Write-Host 'Graph auth: caller-supplied access token.'
             if ($UseGraphPowerShell) { Write-Warning '-GraphAccessToken takes precedence over -UseGraphPowerShell.' }
         }

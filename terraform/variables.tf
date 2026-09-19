@@ -35,7 +35,11 @@ variable "break_glass_group_ids" {
   type        = list(string)
   default     = []
   validation {
-    condition     = alltrue([for g in var.break_glass_group_ids : can(regex("^[0-9a-fA-F-]{36}$", g))])
+    # Positional, not just "36 characters of hex and hyphen" - the looser form accepts a string of
+    # 36 hyphens, and a malformed ID surfaces as a confusing Graph 404 at runbook time instead.
+    condition = alltrue([for g in var.break_glass_group_ids :
+      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", g))
+    ])
     error_message = "break_glass_group_ids must be object IDs (GUIDs)."
   }
 }
@@ -50,12 +54,24 @@ variable "max_expected_accounts" {
   description = "WARN when more than this many break-the-glass accounts are resolved."
   type        = number
   default     = 4
+  validation {
+    # TNT.AccountCount FAILs below two accounts, so a ceiling under two could never be satisfied.
+    condition     = var.max_expected_accounts >= 2
+    error_message = "max_expected_accounts must be at least 2."
+  }
 }
 
 variable "lookback_days" {
   description = "Sign-in lookback window for the unexpected-use check."
   type        = number
   default     = 7
+  validation {
+    # A non-positive value would put the runbook's cutoff in the future, so USE.NoSignIns would find
+    # no sign-ins and PASS every account - a false pass, the worst outcome for a compliance check.
+    # The ceiling is Entra's sign-in log retention with Entra ID P1/P2.
+    condition     = var.lookback_days >= 1 && var.lookback_days <= 30
+    error_message = "lookback_days must be between 1 and 30."
+  }
 }
 
 # ---------------------------------------------------------------- schedule
@@ -73,6 +89,18 @@ variable "schedule_week_days" {
   description = "Days the runbook runs when schedule_frequency = Week."
   type        = set(string)
   default     = ["Monday"]
+  validation {
+    # The Automation API rejects anything else, but only at apply time and after most of the stack
+    # has been created; catching a typo like "Mondays" during plan is cheaper.
+    condition = alltrue([for d in var.schedule_week_days : contains(
+      ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], d
+    )])
+    error_message = "schedule_week_days must be full English day names, e.g. Monday."
+  }
+  validation {
+    condition     = length(var.schedule_week_days) > 0
+    error_message = "schedule_week_days must not be empty."
+  }
 }
 
 variable "schedule_timezone" {
@@ -130,9 +158,15 @@ variable "log_retention_days" {
 }
 
 variable "alert_email_receivers" {
-  description = "Map of receiver name => email address for the action group."
+  description = "Map of receiver name => email address for the action group. Leaving this empty is allowed but silent: the alert rules still fire, and nobody is notified. See the alert_receivers_configured check in alerts.tf."
   type        = map(string)
   default     = {}
+  validation {
+    condition = alltrue([for e in values(var.alert_email_receivers) :
+      can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", e))
+    ])
+    error_message = "alert_email_receivers values must be email addresses."
+  }
 }
 
 variable "enable_entra_signin_export" {
