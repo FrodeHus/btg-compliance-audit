@@ -14,15 +14,16 @@ function Add-Result {
         $Evidence = $null
     )
     $Results.Add([pscustomobject]@{
-            TimeGenerated = (Get-Date).ToUniversalTime().ToString('o')
-            RunId         = $RunId
-            TenantId      = $script:TenantId
-            CheckId       = $CheckId
-            Category      = $Category
-            Target        = $Target
-            Status        = $Status
-            Detail        = $Detail
-            Evidence      = if ($null -eq $Evidence) { '' } else { ($Evidence | ConvertTo-Json -Depth 6 -Compress) }
+            TimeGenerated   = (Get-Date).ToUniversalTime().ToString('o')
+            RunId           = $RunId
+            # Not TenantId: Log Analytics reserves that name on every table as a guid column.
+            AuditedTenantId = $script:TenantId
+            CheckId         = $CheckId
+            Category        = $Category
+            Target          = $Target
+            Status          = $Status
+            Detail          = $Detail
+            Evidence        = if ($null -eq $Evidence) { '' } else { ($Evidence | ConvertTo-Json -Depth 6 -Compress) }
         })
     $colour = switch ($Status) { 'PASS' { 'Green' } 'FAIL' { 'Red' } 'WARN' { 'Yellow' } 'ERROR' { 'Magenta' } 'NOPERM' { 'DarkYellow' } default { 'Gray' } }
     Write-Host ("[{0,-6}] {1,-4} {2,-28} {3} :: {4}" -f $Status, $Category, $CheckId, $Target, $Detail) -ForegroundColor $colour

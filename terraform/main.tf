@@ -10,7 +10,12 @@ locals {
   table_columns = [
     { name = "TimeGenerated", type = "datetime" },
     { name = "RunId", type = "string" },
-    { name = "TenantId", type = "string" },
+    # Not "TenantId": Log Analytics adds that to every table as a standard guid column, so the
+    # Tables API silently drops a custom one and the DCR then fails validation with
+    # "transform output columns do not match ... TenantId [produced:'String', output:'Guid']".
+    # The name is also wrong for this value - it is the tenant that was audited, which need not be
+    # the tenant the workspace lives in.
+    { name = "AuditedTenantId", type = "string" },
     { name = "CheckId", type = "string" },
     { name = "Category", type = "string" },
     { name = "Target", type = "string" },
