@@ -1,5 +1,9 @@
 terraform {
-  required_version = ">= 1.9"
+  # 1.12 is the floor, not a preference: it is the first release where `||` short-circuits in a
+  # variable validation block. Below it, the AVM modules' `var.x == null || var.x.y == ...` guards
+  # still evaluate the right-hand side against null, and `terraform validate` fails with 11 errors
+  # inside the vendored automation, dce and dcr modules before it ever reaches this configuration.
+  required_version = ">= 1.12"
 
   required_providers {
     azurerm = {

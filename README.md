@@ -111,7 +111,7 @@ If you choose to enable a remote backend, do it only in a local, reviewed copy a
 
 ## Deploy
 
-Prerequisites: Terraform >= 1.9 and an `az login` as an identity with Owner (or Contributor + User Access Administrator) on the target subscription. No Entra admin role is needed for the infrastructure — granting the managed identity's Graph permissions is a separate, optional phase (see below).
+Prerequisites: Terraform >= 1.12 and an `az login` as an identity with Owner (or Contributor + User Access Administrator) on the target subscription. No Entra admin role is needed for the infrastructure — granting the managed identity's Graph permissions is a separate, optional phase (see below).
 
 ```bash
 cd terraform

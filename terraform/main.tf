@@ -213,8 +213,10 @@ module "automation" {
       description  = "Verifies break-the-glass account posture: CA exclusion, hygiene, roles, sign-ins, tenant guardrails."
       log_progress = false
       log_verbose  = false
-      # Explicit 0 (not the implicit null default) avoids a module validation bug on Terraform < 1.10
-      # where `v.log_activity_trace_level == null || contains(...)` still evaluates contains(null).
+      # Explicit 0 rather than the implicit null default. This also sidesteps the non-short-circuit
+      # validation bug (`v.log_activity_trace_level == null || contains(...)` still evaluating
+      # contains(null)), which is why required_version is >= 1.12 - measured, not assumed: without
+      # this line 1.11.4 reports 12 validation errors and 1.12.2 reports none.
       log_activity_trace_level = 0
       content                  = local.runbook_content
       tags                     = var.tags
