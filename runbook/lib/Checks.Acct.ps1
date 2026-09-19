@@ -53,7 +53,9 @@ function Invoke-AccountHygieneChecks {
         # -------- authentication methods: FIDO2 only (one call backs all three checks below)
         try {
             $methods = Invoke-Graph -Uri "/users/$uid/authentication/methods"
-            $types = @($methods | ForEach-Object { ($_.'@odata.type' -replace '#microsoft.graph.', '') })
+            # -replace takes a regex, so the dots need escaping and the prefix anchoring: the
+            # unescaped form also matched things like "#microsoftXgraphY".
+            $types = @($methods | ForEach-Object { ($_.'@odata.type' -replace '^#microsoft\.graph\.', '') })
             $fido = @($methods | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.fido2AuthenticationMethod' })
             $disallowed = @($types | Where-Object { $_ -notin @('fido2AuthenticationMethod', 'passwordAuthenticationMethod') })
             if ($fido.Count -ge 1) { Add-Result -CheckId 'ACCT.Fido2Registered' -Category ACCT -Target $upn -Status PASS -Detail "$($fido.Count) FIDO2 key(s) registered." -Evidence @{ keys = @($fido | ForEach-Object { @{ model = $_.model; displayName = $_.displayName; created = $_.createdDateTime; aaGuid = $_.aaGuid } }) } }

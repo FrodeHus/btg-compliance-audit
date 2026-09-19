@@ -158,9 +158,15 @@ variable "log_retention_days" {
 }
 
 variable "alert_email_receivers" {
-  description = "Map of receiver name => email address for the action group."
+  description = "Map of receiver name => email address for the action group. Leaving this empty is allowed but silent: the alert rules still fire, and nobody is notified. See the alert_receivers_configured check in alerts.tf."
   type        = map(string)
   default     = {}
+  validation {
+    condition = alltrue([for e in values(var.alert_email_receivers) :
+      can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", e))
+    ])
+    error_message = "alert_email_receivers values must be email addresses."
+  }
 }
 
 variable "enable_entra_signin_export" {
